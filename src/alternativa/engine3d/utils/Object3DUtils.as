@@ -1,0 +1,100 @@
+package alternativa.engine3d.utils {
+
+	import alternativa.engine3d.alternativa3d;
+	import alternativa.engine3d.core.BoundBox;
+	import alternativa.engine3d.core.Object3D;
+	import alternativa.engine3d.core.Transform3D;
+
+	use namespace alternativa3d;
+
+	/**
+	 * @private
+	 */
+	public class Object3DUtils {
+
+		private static const toRootTransform:Transform3D = new Transform3D();
+		private static const fromRootTransform:Transform3D = new Transform3D();
+
+		private static const RAD2DEG:Number = 180/Math.PI;
+		private static const DEG2RAD:Number = Math.PI/180;
+
+
+		/**
+		 * Convert Degress to Radians and Radians to Degrees
+		 */
+		public static function toRadians(degrees:Number):Number{
+			return degrees * DEG2RAD;
+		}
+
+		/**
+		 * Convert Radians to Degrees
+		 */
+		public static function toDegrees(radians:Number):Number{
+			return radians * RAD2DEG;
+		}
+
+		/**
+		 * @private
+		 * Performs calculation of bound box of objects hierarchy branch.
+		 */
+		public static function calculateHierarchyBoundBox(object:Object3D, boundBoxSpace:Object3D = null, result:BoundBox = null):BoundBox {
+			if (result == null) result = new BoundBox();
+
+			if (boundBoxSpace != null && object != boundBoxSpace) {
+				// Calculate transfer matrix from object to provided space.
+				var objectRoot:Object3D;
+				var toSpaceTransform:Transform3D = null;
+
+				if (object.transformChanged) object.composeTransforms();
+				toRootTransform.copy(object.transform);
+				var root:Object3D = object;
+				while (root._parent != null) {
+					root = root._parent;
+					if (root.transformChanged) root.composeTransforms();
+					toRootTransform.append(root.transform);
+					if (root == boundBoxSpace) {
+						// Matrix has been composed.
+						toSpaceTransform = toRootTransform;
+					}
+				}
+				objectRoot = root;
+				if (toSpaceTransform == null) {
+					// Transfer matrix from root to needed space.
+					if (boundBoxSpace.transformChanged) boundBoxSpace.composeTransforms();
+					fromRootTransform.copy(boundBoxSpace.inverseTransform);
+					root = boundBoxSpace;
+					while (root._parent != null) {
+						root = root._parent;
+						if (root.transformChanged) root.composeTransforms();
+						fromRootTransform.prepend(root.inverseTransform);
+					}
+					if (objectRoot == root) {
+						toRootTransform.append(fromRootTransform);
+						toSpaceTransform = toRootTransform;
+					} else {
+						throw new ArgumentError("Object and boundBoxSpace must be located in the same hierarchy.");
+					}
+				}
+				updateBoundBoxHierarchically(object, result, toSpaceTransform);
+			} else {
+				updateBoundBoxHierarchically(object, result);
+			}
+			return result;
+		}
+
+		/**
+		 * @private
+		 * Calculates hierarchical bound.
+		 */
+		alternativa3d static function updateBoundBoxHierarchically(object:Object3D, boundBox:BoundBox, transform:Transform3D = null):void {
+			object.updateBoundBox(boundBox, transform);
+			for (var child:Object3D = object.childrenList; child != null; child = child.next) {
+				if (child.transformChanged) child.composeTransforms();
+				child.localToCameraTransform.copy(child.transform);
+				if (transform != null) child.localToCameraTransform.append(transform);
+				updateBoundBoxHierarchically(child, boundBox, child.localToCameraTransform);
+			}
+		}
+
+	}
+}
